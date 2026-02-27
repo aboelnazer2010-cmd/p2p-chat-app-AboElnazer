@@ -44,14 +44,12 @@ const toaster = document.getElementById('toaster');
 const emojiBtn = document.getElementById('emoji-btn');
 const emojiPicker = document.getElementById('emoji-picker');
 const channelTitle = document.getElementById('current-channel-title');
-const breadcrumbActive = document.getElementById('breadcrumb-active'); // تمت إضافة هذا المتغير لتجنب الخطأ
 const channelBtns = document.querySelectorAll('.chat-channel');
 const mobileMenuBtn = document.getElementById('mobile-menu-btn');
 const membersBtn = document.getElementById('members-btn');
 const mobileOverlay = document.getElementById('mobile-overlay');
 const sidebarLeft = document.querySelector('.sidebar-left');
 const sidebarRight = document.querySelector('.sidebar-right');
-const myNameDisplay = document.getElementById('my-name-display'); // 💡 إصلاح هام: هذا المتغير كان مفقوداً وسيسبب عطلاً عند تغيير الاسم
 
 let incomingFiles = {};
 
@@ -66,25 +64,15 @@ function generateId() {
 
 function init() {
     myId = generateId();
-    if(myIdEls) myIdEls.innerText = myId;
+    myIdEls.innerText = myId;
 
     const magicLink = `${window.location.origin}${window.location.pathname}#${myId}`;
-    if(magicLinkInput) magicLinkInput.value = magicLink;
+    magicLinkInput.value = magicLink;
 
-    // 💡 التحديث الأهم: إضافة خوادم STUN لاختراق جدار الحماية للراوتر والعمل عبر الإنترنت
-    peer = new Peer(myId, { 
-        debug: 1,
-        config: {
-            'iceServers': [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' }
-            ]
-        }
-    });
+    peer = new Peer(myId, { debug: 1 });
 
     peer.on('open', (id) => {
-        if(statusEl) statusEl.innerText = 'Ready.';
+        statusEl.innerText = 'Ready.';
         updateMembersList([{ id: myId, name: myName + ' (Me)', avatar: myAvatar }]);
         checkHashForAutoConnect();
     });
@@ -95,12 +83,9 @@ function init() {
     });
 
     peer.on('error', (err) => {
-        console.error("PeerJS Error:", err);
-        if(statusEl) {
-            statusEl.innerText = `Error: ${err.type}`;
-            statusEl.style.color = '#ef4444';
-        }
-        showToast(`Connection Error: ${err.type}`); // إظهار الخطأ للمستخدم
+        console.error(err);
+        statusEl.innerText = `Error: ${err.type}`;
+        statusEl.style.color = '#ef4444';
     });
 
     renderChatHistory();
@@ -118,7 +103,7 @@ function checkHashForAutoConnect() {
 
 function connectToHost(targetId) {
     if (!targetId || targetId === myId) return;
-    if(statusEl) statusEl.innerText = `Joining...`;
+    statusEl.innerText = `Joining...`;
 
     isHost = false;
 
@@ -126,10 +111,8 @@ function connectToHost(targetId) {
 
     connection.on('open', () => {
         hostConnection = connection;
-        if(statusEl) {
-            statusEl.innerText = 'Connected!';
-            statusEl.style.color = 'var(--green)';
-        }
+        statusEl.innerText = 'Connected!';
+        statusEl.style.color = 'var(--green)';
 
         connection.send({
             type: 'join',
@@ -145,7 +128,7 @@ function connectToHost(targetId) {
 
     connection.on('close', () => {
         systemNotice('Host disconnected. Room closed.', currentChannel);
-        if(statusEl) statusEl.innerText = 'Disconnected.';
+        statusEl.innerText = 'Disconnected.';
         hostConnection = null;
     });
 }
@@ -153,7 +136,7 @@ function connectToHost(targetId) {
 function handleHostConnection(connection) {
     connection.on('open', () => {
         clientConnections[connection.peer] = { conn: connection, name: 'Unknown', avatar: '' };
-        if(statusEl) statusEl.innerText = `Hosting (${Object.keys(clientConnections).length} peers)`;
+        statusEl.innerText = `Hosting (${Object.keys(clientConnections).length} peers)`;
     });
 
     connection.on('data', (data) => {
@@ -179,7 +162,7 @@ function handleHostConnection(connection) {
     connection.on('close', () => {
         const peerName = clientConnections[connection.peer]?.name || connection.peer;
         delete clientConnections[connection.peer];
-        if(statusEl) statusEl.innerText = `Hosting (${Object.keys(clientConnections).length} peers)`;
+        statusEl.innerText = `Hosting (${Object.keys(clientConnections).length} peers)`;
 
         systemNotice(`<strong>${peerName}</strong> left.`, currentChannel);
         broadcast({ type: 'system', text: `<strong>${peerName}</strong> left.`, channel: currentChannel }, connection.peer);
@@ -251,10 +234,13 @@ function handleData(data, senderPeerId) {
                 clientConnections[data.senderId].name = data.newName;
                 systemNotice(`<strong>${oldName}</strong> changed their name to <strong>${data.newName}</strong>`, currentChannel);
                 syncPeerList();
-                broadcast(data, senderPeerId);
+                broadcast(data, senderPeerId); // Relay to other clients
             }
         } else {
-            if (data.senderId === hostConnection?.peer) {
+            // As a client, we just receive the system message from host when someone changes name, 
+            // but the host will send down a new 'peer-list' to update the right sidebar anyway.
+            // If the host changed their *own* name, we'll see it in the next peer-list.
+            if (data.senderId === hostConnection.peer) {
                 systemNotice(`<strong>Host</strong> changed their name to <strong>${data.newName}</strong>`, currentChannel);
             }
         }
@@ -272,7 +258,7 @@ function assembleFile(senderId) {
         <div>📄 <strong>${fileState.meta.name}</strong> <br><small class="text-secondary">From ${fileState.senderName} • ${formatSize(fileState.meta.size)}</small></div>
         <a href="${url}" download="${fileState.meta.name}"><i class="fa-solid fa-download"></i> Download</a>
     `;
-    if(downloadsList) downloadsList.prepend(downloadItem);
+    downloadsList.prepend(downloadItem);
 
     saveMessageToHistory(fileState.channel, `Shared a file: <strong>${fileState.meta.name}</strong>`, fileState.senderName, '', new Date());
     if (currentChannel === fileState.channel) renderChatHistory();
@@ -282,7 +268,6 @@ function assembleFile(senderId) {
 }
 
 function sendMessage() {
-    if(!msgInput) return;
     const text = msgInput.value.trim();
     if (!text) return;
 
@@ -306,7 +291,6 @@ function sendMessage() {
 }
 
 async function sendFile() {
-    if(!fileInput) return;
     const file = fileInput.files[0];
     if (!file) return;
 
@@ -351,8 +335,8 @@ async function sendFile() {
 // ----------------- UI / CHANNEL LOGIC -----------------
 function switchChannel(channelName) {
     currentChannel = channelName;
-    if(channelTitle) channelTitle.innerText = channelName === 'General' ? '💬 General' : `# ${channelName}`;
-    if(breadcrumbActive) breadcrumbActive.innerText = channelName === 'General' ? '💬 General' : `# ${channelName}`;
+    channelTitle.innerText = channelName === 'General' ? '🌍 General' : `# ${channelName}`;
+    breadcrumbActive.innerText = channelName === 'General' ? '🌍 General' : `# ${channelName}`;
 
     channelBtns.forEach(btn => {
         if (btn.dataset.channel === channelName) btn.classList.add('active');
@@ -375,7 +359,6 @@ function systemNotice(text, channel) {
 }
 
 function renderChatHistory() {
-    if(!chatBox) return;
     chatBox.innerHTML = '<div class="date-divider"><span>Today</span></div>';
 
     const history = channelHistories[currentChannel] || [];
@@ -412,31 +395,29 @@ function renderChatHistory() {
 }
 
 function showTransferProgress(filename, percentage) {
-    if(transferFilename) transferFilename.innerText = filename;
-    if(transferPercentage) transferPercentage.innerText = `${percentage}%`;
-    if(transferProgress) transferProgress.style.width = `${percentage}%`;
-    if(transferContainer) transferContainer.classList.remove('hidden');
+    transferFilename.innerText = filename;
+    transferPercentage.innerText = `${percentage}%`;
+    transferProgress.style.width = `${percentage}%`;
+    transferContainer.classList.remove('hidden');
 }
 
 function updateTransferProgress(percentage) {
-    if(transferPercentage) transferPercentage.innerText = `${percentage}%`;
-    if(transferProgress) transferProgress.style.width = `${percentage}%`;
+    transferPercentage.innerText = `${percentage}%`;
+    transferProgress.style.width = `${percentage}%`;
 }
 
 function hideTransferProgress() {
-    if(transferContainer) transferContainer.classList.add('hidden');
-    if(transferProgress) transferProgress.style.width = '0%';
+    transferContainer.classList.add('hidden');
+    transferProgress.style.width = '0%';
 }
 
 function showToast(message) {
-    if(!toaster) return;
     toaster.innerText = message;
     toaster.classList.add('show');
     setTimeout(() => { toaster.classList.remove('show'); }, 2500);
 }
 
 function updateMembersList(list) {
-    if(!membersList) return;
     membersList.innerHTML = '';
     list.forEach(member => {
         const safeAvatar = member.avatar || `https://ui-avatars.com/api/?name=${member.name}&background=random`;
@@ -468,7 +449,8 @@ function setupUIInteractions() {
     document.querySelectorAll('.toggle-team').forEach(header => {
         header.addEventListener('click', () => {
             const channelList = header.nextElementSibling;
-            if(channelList) channelList.classList.toggle('hidden-collapse');
+            channelList.classList.toggle('hidden-collapse');
+            showToast('Toggled team folder.');
         });
     });
 
@@ -477,22 +459,26 @@ function setupUIInteractions() {
             e.preventDefault();
             document.querySelectorAll('.left-nav-item').forEach(n => n.classList.remove('active'));
             item.classList.add('active');
+            showToast(`Navigated to: ${item.innerText}`);
         });
     });
 
+    // Mobile Sidebar Toggles
     if (mobileMenuBtn) {
         mobileMenuBtn.addEventListener('click', () => {
-            if(sidebarLeft) sidebarLeft.classList.toggle('show');
-            if(mobileOverlay) mobileOverlay.classList.toggle('show');
-            if(sidebarRight) sidebarRight.classList.remove('show');
+            sidebarLeft.classList.toggle('show');
+            mobileOverlay.classList.toggle('show');
+            sidebarRight.classList.remove('show');
         });
     }
 
     if (membersBtn) {
         membersBtn.addEventListener('click', () => {
-            if(sidebarRight) sidebarRight.classList.toggle('show');
-            if(sidebarLeft) sidebarLeft.classList.remove('show');
-            if (window.innerWidth <= 1024 && mobileOverlay) {
+            sidebarRight.classList.toggle('show');
+            sidebarLeft.classList.remove('show');
+            // Show overlay on mobile, but maybe not strictly necessary on tablet, 
+            // but let's toggle it anyway for consistency on small screens
+            if (window.innerWidth <= 1024) {
                 mobileOverlay.classList.add('show');
             }
         });
@@ -500,112 +486,101 @@ function setupUIInteractions() {
 
     if (mobileOverlay) {
         mobileOverlay.addEventListener('click', () => {
-            if(sidebarLeft) sidebarLeft.classList.remove('show');
-            if(sidebarRight) sidebarRight.classList.remove('show');
+            sidebarLeft.classList.remove('show');
+            sidebarRight.classList.remove('show');
             mobileOverlay.classList.remove('show');
         });
     }
 
+    // Mobile specific: click a channel -> hide left sidebar automatically
     channelBtns.forEach(btn => {
         btn.addEventListener('click', () => {
             if (window.innerWidth <= 768) {
-                if(sidebarLeft) sidebarLeft.classList.remove('show');
-                if(mobileOverlay) mobileOverlay.classList.remove('show');
+                sidebarLeft.classList.remove('show');
+                mobileOverlay.classList.remove('show');
             }
         });
     });
 
-    // إضافة حماية للبحث عن الأزرار قبل إضافة أحداث لها لتجنب أخطاء الواجهة
-    const safeAddListener = (id, event, callback) => {
-        const el = document.getElementById(id);
-        if(el) el.addEventListener(event, callback);
-    };
+    // Mockup action buttons
+    document.getElementById('workspace-dropdown').addEventListener('click', () => showToast('Workspace Menu Opened'));
+    document.getElementById('quick-add-room-btn').addEventListener('click', () => showToast('Create Chatroom Dialog...'));
+    document.getElementById('add-channel-1').addEventListener('click', (e) => { e.preventDefault(); showToast('Add Channel to UX & UI Team'); });
+    document.getElementById('add-channel-2').addEventListener('click', (e) => { e.preventDefault(); showToast('Add Channel to 3D Team'); });
+    document.getElementById('settings-btn').addEventListener('click', (e) => { e.preventDefault(); showToast('Opening Settings...'); });
+    document.getElementById('user-profile-btn').addEventListener('click', () => showToast('Opening Profile Details...'));
+    document.getElementById('record-btn').addEventListener('click', () => showToast('Starting Screen Recorder component...'));
 
-    safeAddListener('workspace-dropdown', 'click', () => showToast('Workspace Menu Opened'));
-    safeAddListener('quick-add-room-btn', 'click', () => showToast('Create Chatroom Dialog...'));
-    safeAddListener('add-channel-1', 'click', (e) => { e.preventDefault(); showToast('Add Channel to UX & UI Team'); });
-    safeAddListener('add-channel-2', 'click', (e) => { e.preventDefault(); showToast('Add Channel to 3D Team'); });
-    safeAddListener('settings-btn', 'click', (e) => { e.preventDefault(); showToast('Opening Settings...'); });
-    safeAddListener('user-profile-btn', 'click', () => showToast('Opening Profile Details...'));
-    safeAddListener('record-btn', 'click', () => showToast('Starting Screen Recorder component...'));
-    safeAddListener('bc-back', 'click', () => showToast('Navigate Back'));
-    safeAddListener('bc-fwd', 'click', () => showToast('Navigate Forward'));
-    safeAddListener('bc-close', 'click', () => showToast('Closing Workspace...'));
-    safeAddListener('pin-btn', 'click', () => showToast('Pinned Messages Dialog'));
-    safeAddListener('thread-btn', 'click', () => showToast('Threads Sidebar Opened'));
-    safeAddListener('search-input', 'keypress', (e) => { if (e.key === 'Enter') showToast(`Searching for: ${e.target.value}`) });
-    safeAddListener('mic-btn', 'click', () => showToast('Voice memo recording started...'));
-    
-    safeAddListener('at-btn', 'click', () => { 
-        if(msgInput) { msgInput.value += '@'; msgInput.focus(); } 
+    document.getElementById('bc-back').addEventListener('click', () => showToast('Navigate Back'));
+    document.getElementById('bc-fwd').addEventListener('click', () => showToast('Navigate Forward'));
+    document.getElementById('bc-close').addEventListener('click', () => showToast('Closing Workspace...'));
+    document.getElementById('pin-btn').addEventListener('click', () => showToast('Pinned Messages Dialog'));
+    document.getElementById('thread-btn').addEventListener('click', () => showToast('Threads Sidebar Opened'));
+    document.getElementById('search-input').addEventListener('keypress', (e) => { if (e.key === 'Enter') showToast(`Searching for: ${e.target.value}`) });
+
+    document.getElementById('mic-btn').addEventListener('click', () => showToast('Voice memo recording started...'));
+    document.getElementById('at-btn').addEventListener('click', () => { msgInput.value += '@'; msgInput.focus(); });
+
+    // Emoji Picker Logic
+    emojiBtn.addEventListener('click', () => emojiPicker.classList.toggle('hidden'));
+    emojiPicker.querySelectorAll('span').forEach(emoji => {
+        emoji.addEventListener('click', () => {
+            msgInput.value += emoji.innerText;
+            emojiPicker.classList.add('hidden');
+            msgInput.focus();
+        });
     });
 
-    if (emojiBtn && emojiPicker) {
-        emojiBtn.addEventListener('click', () => emojiPicker.classList.toggle('hidden'));
-        emojiPicker.querySelectorAll('span').forEach(emoji => {
-            emoji.addEventListener('click', () => {
-                if(msgInput) {
-                    msgInput.value += emoji.innerText;
-                    msgInput.focus();
-                }
-                emojiPicker.classList.add('hidden');
-            });
-        });
-    }
+    // Core Interaction Listeners
+    copyLinkBtn.addEventListener('click', () => {
+        magicLinkInput.select();
+        document.execCommand('copy');
+        showToast('Magic Link Copied!');
+    });
 
-    safeAddListener('copy-link-btn', 'click', () => {
-        if(magicLinkInput) {
-            magicLinkInput.select();
-            document.execCommand('copy');
-            showToast('Magic Link Copied!');
+    connectBtn.addEventListener('click', () => connectToHost(targetIdInput.value.trim().toUpperCase()));
+    sendMsgBtn.addEventListener('click', sendMessage);
+    msgInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
+    attachBtn.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', sendFile);
+
+    // Profile Name Editing Logic
+    myNameDisplay.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            myNameDisplay.blur();
         }
     });
 
-    safeAddListener('connect-btn', 'click', () => {
-        if(targetIdInput) connectToHost(targetIdInput.value.trim().toUpperCase());
+    myNameDisplay.addEventListener('blur', () => {
+        const newName = myNameDisplay.innerText.trim() || 'Anonymous';
+        myNameDisplay.innerText = newName;
+
+        if (newName !== myName) {
+            const oldName = myName;
+            myName = newName;
+            showToast(`Name updated to ${myName}`);
+
+            // Re-render local members list to show my new name immediately
+            if (isHost) syncPeerList();
+            else {
+                // Hack to just update the local UI before the Host syncs back
+                membersList.querySelector('.member-item').title = myName;
+            }
+
+            const nameChangeData = {
+                type: 'name-change',
+                senderId: myId,
+                newName: myName
+            };
+
+            if (isHost) broadcast(nameChangeData);
+            else if (hostConnection && hostConnection.open) hostConnection.send(nameChangeData);
+
+            systemNotice(`You changed your name to <strong>${myName}</strong>`, currentChannel);
+        }
     });
-    
-    safeAddListener('send-msg-btn', 'click', sendMessage);
-    safeAddListener('message-input', 'keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
-    safeAddListener('attach-btn', 'click', () => { if(fileInput) fileInput.click(); });
-    safeAddListener('file-input', 'change', sendFile);
 
-    // Profile Name Editing Logic
-    if (myNameDisplay) {
-        myNameDisplay.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                myNameDisplay.blur();
-            }
-        });
-
-        myNameDisplay.addEventListener('blur', () => {
-            const newName = myNameDisplay.innerText.trim() || 'Anonymous';
-            myNameDisplay.innerText = newName;
-
-            if (newName !== myName) {
-                myName = newName;
-                showToast(`Name updated to ${myName}`);
-
-                if (isHost) syncPeerList();
-                else {
-                    const myMemberItem = membersList?.querySelector(`.member-item[title*="(Me)"]`);
-                    if(myMemberItem) myMemberItem.title = myName + ' (Me)';
-                }
-
-                const nameChangeData = {
-                    type: 'name-change',
-                    senderId: myId,
-                    newName: myName
-                };
-
-                if (isHost) broadcast(nameChangeData);
-                else if (hostConnection && hostConnection.open) hostConnection.send(nameChangeData);
-
-                systemNotice(`You changed your name to <strong>${myName}</strong>`, currentChannel);
-            }
-        });
-    }
 }
 
 // Run
