@@ -69,7 +69,14 @@ function init() {
     const magicLink = `${window.location.origin}${window.location.pathname}#${myId}`;
     magicLinkInput.value = magicLink;
 
-    peer = new Peer(myId, { debug: 1 });
+    // LAN-First approach: Forcing local connection by removing external STUN servers.
+    // This tells WebRTC not to query external servers for public IPs.
+    peer = new Peer(myId, {
+        debug: 1,
+        config: {
+            'iceServers': [] // Empty array forces local host candidates (LAN only)
+        }
+    });
 
     peer.on('open', (id) => {
         statusEl.innerText = 'Ready.';
