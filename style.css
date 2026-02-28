@@ -30,7 +30,7 @@ html {
     }
 }
 
-/* dark theme variables */
+/* theme variables */
 :root[data-theme="dark"] {
     --bg-primary: #212121;
     --bg-secondary: #181818;
@@ -42,6 +42,39 @@ html {
     --accent-red: #ef9a9a;
     --accent-yellow: #fff59d;
     --success-green: #a5d6a7;
+}
+:root[data-theme="sepia"] {
+    --bg-primary: #f4ecd8;
+    --bg-secondary: #e7dfc6;
+    --bg-sidebar: #d9cbb7;
+    --text-primary: #5b4636;
+    --text-secondary: #7b6b5a;
+    --border-color: #c2b095;
+    --accent-blue: #6a7b8c;
+    --accent-red: #b85c38;
+    --accent-yellow: #d4aa4f;
+    --success-green: #8a9a5b;
+}
+:root[data-theme="solarized"] {
+    --bg-primary: #fdf6e3;
+    --bg-secondary: #eee8d5;
+    --bg-sidebar: #93a1a1;
+    --text-primary: #657b83;
+    --text-secondary: #586e75;
+    --border-color: #839496;
+    --accent-blue: #268bd2;
+    --accent-red: #dc322f;
+    --accent-yellow: #b58900;
+    --success-green: #859900;
+}
+
+/* file preview styles */
+.file-preview {
+    max-width: 200px;
+    max-height: 150px;
+    margin-top: 0.5rem;
+    border-radius: 0.25rem;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
 * {
@@ -404,6 +437,12 @@ button:hover {
     margin-top: auto;
 }
 
+.footer-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
 .footer-menu a {
     display: block;
     color: var(--text-secondary);
@@ -412,6 +451,24 @@ button:hover {
     font-size: 0.9rem;
 }
 
+.footer-menu .theme-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.footer-menu select {
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.4rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+}
+
+.footer-menu select:focus {
+    border-color: var(--accent-blue);
+    outline: none;
+}
 .user-profile {
     display: flex;
     align-items: center;
@@ -535,6 +592,17 @@ button:hover {
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
+}
+
+/* search results count and highlight */
+.search-result-count {
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+.mark {
+    background: var(--accent-yellow);
+    color: inherit;
 }
 
 /* --- Chat Messages Styling (New Look) --- */

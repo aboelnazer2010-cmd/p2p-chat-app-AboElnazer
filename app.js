@@ -67,14 +67,9 @@ function setTheme(theme) {
 }
 
 function updateDarkModeButton() {
-    const btn = document.getElementById('dark-mode-toggle');
-    if (!btn) return;
-    const current = document.documentElement.getAttribute('data-theme');
-    if (current === 'dark') {
-        btn.innerHTML = '<i class="fa-solid fa-sun"></i> Light mode';
-    } else {
-        btn.innerHTML = '<i class="fa-solid fa-moon"></i> Dark mode';
-    }
+    const sel = document.getElementById('theme-selector');
+    if (!sel) return;
+    sel.value = document.documentElement.getAttribute('data-theme') || 'light';
 }
 
 function generateId() {
@@ -288,6 +283,18 @@ function handleData(data, senderPeerId) {
     }
 }
 
+// helper to create preview markup for common file types
+function getPreviewHtml(meta, url) {
+    if (meta.type.startsWith('image/')) {
+        return `<br><img src="${url}" class="file-preview">`;
+    } else if (meta.type.startsWith('video/')) {
+        return `<br><video src="${url}" class="file-preview" controls></video>`;
+    } else if (meta.type === 'application/pdf') {
+        return `<br><embed src="${url}" type="application/pdf" width="100%" height="200px">`;
+    }
+    return '';
+}
+
 function assembleFile(fileId) {
     const fileState = incomingFiles[fileId];
     if (!fileState) return;
@@ -302,7 +309,10 @@ function assembleFile(fileId) {
     `;
     if (downloadsList) downloadsList.prepend(downloadItem);
 
-    saveMessageToHistory(fileState.channel, `Shared a file: <strong><a href="${url}" download="${fileState.meta.name}">${fileState.meta.name}</a></strong>`, fileState.senderName, '', new Date(), fileState.senderId);
+    const preview = getPreviewHtml(fileState.meta, url);
+    saveMessageToHistory(fileState.channel,
+        `Shared a file: <strong><a href="${url}" download="${fileState.meta.name}">${fileState.meta.name}</a></strong>${preview}`,
+        fileState.senderName, '', new Date(), fileState.senderId);
     if (currentChannel === fileState.channel) renderChatHistory();
     delete incomingFiles[fileId];
 }
@@ -334,7 +344,9 @@ async function sendFile() {
         if (isHost) await broadcast(metaData);
         else await safeSend(hostConnection, metaData);
 
-        saveMessageToHistory(currentChannel, `Sending file: <strong>${file.name}</strong>`, myName, myAvatar, new Date(), myId);
+        const localUrl = URL.createObjectURL(file);
+        const previewOut = getPreviewHtml(file, localUrl);
+        saveMessageToHistory(currentChannel, `Sending file: <strong>${file.name}</strong>${previewOut}`, myName, myAvatar, new Date(), myId);
         renderChatHistory();
 
         const arrayBuffer = await file.arrayBuffer();
@@ -449,6 +461,29 @@ function renderChatHistory() {
     chatBox.scrollTop = chatBox.scrollHeight;
 }
 
+function renderSearchResults(term) {
+    if (!chatBox) return;
+    const history = channelHistories[currentChannel] || [];
+    const lowered = term.toLowerCase();
+    const matches = history.filter(m => m.type === 'chat' && m.text.toLowerCase().includes(lowered));
+    chatBox.innerHTML = `<div class="search-result-count">${matches.length} result(s) for "${term}"</div>`;
+    matches.forEach(msg => {
+        const timeStr = msg.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const safeAvatar = msg.avatarUrl || `https://ui-avatars.com/api/?name=${msg.sender}&background=random&color=fff`;
+        const mineClass = msg.senderId === myId ? ' mine' : '';
+        const highlighted = msg.text.replace(new RegExp(term, 'ig'), match => `<mark>${match}</mark>`);
+        chatBox.innerHTML += `
+        <div class="message-group${mineClass}">
+            <img src="${safeAvatar}" class="msg-avatar">
+            <div class="msg-content">
+                <div class="msg-header"><span class="sender-name">${msg.sender}</span><span class="msg-time">${timeStr}</span></div>
+                <div class="msg-text">${highlighted}</div>
+            </div>
+        </div>`;
+    });
+    chatBox.scrollTop = 0;
+}
+
 // utility for managing multiple transfer bars
 function createTransferBar(id, text) {
     if (!transferContainer) return null;
@@ -539,13 +574,14 @@ function setupUIInteractions() {
         });
     }
 
-    // dark mode toggle
-    const darkBtn = document.getElementById('dark-mode-toggle');
-    if (darkBtn) {
-        darkBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            const current = document.documentElement.getAttribute('data-theme');
-            setTheme(current === 'dark' ? 'light' : 'dark');
+    // theme selector
+    const themeSelector = document.getElementById('theme-selector');
+    if (themeSelector) {
+        // set initial value
+        const saved = document.documentElement.getAttribute('data-theme') || 'light';
+        themeSelector.value = saved;
+        themeSelector.addEventListener('change', () => {
+            setTheme(themeSelector.value);
             updateDarkModeButton();
         });
     }
@@ -577,14 +613,35 @@ function setupUIInteractions() {
         });
     });
 
-    // تفعيل شريط البحث (Search Filter)
+    // تفعيل شريط البحث (Search Filter and full history search)
     if (searchInput) {
         searchInput.addEventListener('input', (e) => {
             const term = e.target.value.toLowerCase();
+            if (!term) {
+                renderChatHistory();
+                return;
+            }
             const messages = chatBox.querySelectorAll('.message-group, .system-message');
             messages.forEach(msg => {
                 msg.style.display = msg.innerText.toLowerCase().includes(term) ? 'flex' : 'none';
             });
+        });
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                const term = e.target.value.trim();
+                if (term === '') {
+                    renderChatHistory();
+                } else {
+                    renderSearchResults(term);
+                }
+            }
+        });
+        // escape to clear results
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                searchInput.value = '';
+                renderChatHistory();
+            }
         });
     }
 
