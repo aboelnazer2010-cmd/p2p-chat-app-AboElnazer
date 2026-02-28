@@ -1,5 +1,4 @@
-// رفعنا حجم القطعة لـ 256KB لتقليل وقت المعالجة وزيادة السرعة
-const CHUNK_SIZE = 262144;
+const CHUNK_SIZE = 262144; // رفعنا حجم القطعة لـ 64KB لسرعة نقل خارقة
 let peer = null;
 
 // بنية الشبكة (Star Topology)
@@ -403,14 +402,13 @@ function formatSize(bytes) {
 }
 
 // ----------------- UI BUTTON WIRING -----------------
-// ----------------- UI BUTTON WIRING -----------------
 function setupUIInteractions() {
-    // 1. تفعيل التنقل بين القنوات
+    // تفعيل التنقل بين القنوات
     document.querySelectorAll('.chat-channel').forEach(btn => {
         btn.addEventListener('click', (e) => { e.preventDefault(); switchChannel(btn.dataset.channel); });
     });
 
-    // 2. تفعيل وظيفة إنشاء قناة جديدة
+    // تفعيل وظيفة إنشاء قناة جديدة
     document.querySelectorAll('.add-channel-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.preventDefault();
@@ -419,7 +417,7 @@ function setupUIInteractions() {
                 const name = channelName.trim();
                 if (!channelHistories[name]) channelHistories[name] = [];
                 addChannelToUI(name, 'UX & UI Team');
-                switchChannel(name); 
+                switchChannel(name); // الانتقال للقناة الجديدة
 
                 const data = { type: 'new-channel', name: name };
                 if (isHost) broadcast(data);
@@ -427,93 +425,6 @@ function setupUIInteractions() {
             }
         });
     });
-
-    // 3. تفعيل شريط البحث (Search Filter)
-    if (searchInput) {
-        searchInput.addEventListener('input', (e) => {
-            const term = e.target.value.toLowerCase();
-            const messages = chatBox.querySelectorAll('.message-group, .system-message');
-            messages.forEach(msg => {
-                msg.style.display = msg.innerText.toLowerCase().includes(term) ? 'flex' : 'none';
-            });
-        });
-    }
-
-    // 4. تأثيرات القائمة اليسرى (Home, Search...)
-    document.querySelectorAll('.nav-item').forEach(item => {
-        item.addEventListener('click', (e) => {
-            if (item.getAttribute('href') === '#') e.preventDefault();
-            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-            item.classList.add('active');
-        });
-    });
-
-    // 5. Emoji Picker
-    if (emojiBtn && emojiPicker) {
-        emojiBtn.addEventListener('click', () => emojiPicker.classList.toggle('hidden'));
-        emojiPicker.querySelectorAll('span').forEach(emoji => {
-            emoji.addEventListener('click', () => { msgInput.value += emoji.innerText; emojiPicker.classList.add('hidden'); msgInput.focus(); });
-        });
-    }
-
-    // 6. الأزرار الأساسية للشاشة الافتتاحية والإرسال
-    if (copyLinkBtn) copyLinkBtn.addEventListener('click', () => { magicLinkInput.select(); document.execCommand('copy'); showToast('Link copied!'); });
-    if (connectBtn) connectBtn.addEventListener('click', () => connectToHost(targetIdInput.value.trim().toUpperCase()));
-    if (sendMsgBtn) sendMsgBtn.addEventListener('click', sendMessage);
-    if (msgInput) msgInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
-    if (attachBtn) attachBtn.addEventListener('click', () => fileInput.click());
-    if (fileInput) fileInput.addEventListener('change', sendFile);
-
-    // ==========================================
-    // 7. تفعيل باقي الأزرار في الواجهة (الجديد)
-    // ==========================================
-
-    // زر الميكروفون (الزر الأول في قائمة icon-btn)
-    const micBtn = document.querySelectorAll('.icon-btn')[0];
-    if (micBtn) micBtn.addEventListener('click', () => showToast('Voice messages coming soon! 🎤'));
-
-    // زر المنشن @ (الزر الثالث في القائمة)
-    const atBtn = document.querySelectorAll('.icon-btn')[2];
-    if (atBtn) {
-        atBtn.addEventListener('click', () => {
-            msgInput.value += '@';
-            msgInput.focus(); // إعادة التركيز على حقل الإدخال
-        });
-    }
-
-    // زر تسجيل الفيديو (القائمة اليسرى بالأسفل)
-    const recordBtn = document.querySelector('.record-btn');
-    if (recordBtn) recordBtn.addEventListener('click', () => showToast('Video recording requires media server 🎥'));
-
-    // أيقونة التثبيت (Pin) بجانب اسم القناة
-    const pinIcon = document.querySelector('.pin-icon');
-    if (pinIcon) {
-        pinIcon.addEventListener('click', () => {
-            pinIcon.style.color = pinIcon.style.color === 'var(--accent-blue)' ? 'var(--text-secondary)' : 'var(--accent-blue)';
-            showToast('Channel Pin Toggled! 📌');
-        });
-    }
-
-    // أيقونة المشاركة (Share Nodes) في الأعلى
-    const shareIcon = document.querySelector('.action-icon');
-    if (shareIcon) shareIcon.addEventListener('click', () => showToast('Share options opened! 🔗'));
-
-    // زر المحادثات الجانبية (Thread)
-    const threadBtn = document.querySelector('.btn-thread');
-    if (threadBtn) threadBtn.addEventListener('click', () => showToast('Threads panel activated! 🧵'));
-
-    // أيقونة طي القائمة اليسرى
-    const collapseIcon = document.querySelector('.collapse-icon');
-    if (collapseIcon) collapseIcon.addEventListener('click', () => showToast('Sidebar collapse coming soon! ⏪'));
-
-    // أيقونة إضافة قسم جديد (+)
-    const addIcon = document.querySelector('.add-icon');
-    if (addIcon) addIcon.addEventListener('click', () => showToast('Create new group! ➕'));
-
-    // خيارات الأعضاء الجانبية (...)
-    const rightEllipsis = document.querySelector('.members-header .fa-ellipsis');
-    if (rightEllipsis) rightEllipsis.addEventListener('click', () => showToast('Member settings opened! ⚙️'));
-}
 
     // تفعيل شريط البحث (Search Filter)
     if (searchInput) {
@@ -566,5 +477,3 @@ if ('serviceWorker' in navigator) {
             });
     });
 }
-
-
