@@ -1,4 +1,6 @@
-const CHUNK_SIZE = 262144; // رفعنا حجم القطعة لـ 64KB لسرعة نقل خارقة
+// زادت حجم القطعة لسرعة أكبر (512KB)
+const CHUNK_SIZE = 524288; // 512KB
+
 let peer = null;
 
 // بنية الشبكة (Star Topology)
@@ -52,6 +54,28 @@ const channelTitle = document.getElementById('current-channel-title');
 const breadcrumbActive = document.getElementById('breadcrumb-active');
 
 let incomingFiles = {};
+let transferItems = {}; // { id: {container, filenameEl, percentEl, fillEl} }
+
+function setTheme(theme) {
+    if (theme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+        localStorage.setItem('theme', 'dark');
+    } else {
+        document.documentElement.removeAttribute('data-theme');
+        localStorage.setItem('theme', 'light');
+    }
+}
+
+function updateDarkModeButton() {
+    const btn = document.getElementById('dark-mode-toggle');
+    if (!btn) return;
+    const current = document.documentElement.getAttribute('data-theme');
+    if (current === 'dark') {
+        btn.innerHTML = '<i class="fa-solid fa-sun"></i> Light mode';
+    } else {
+        btn.innerHTML = '<i class="fa-solid fa-moon"></i> Dark mode';
+    }
+}
 
 function generateId() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -61,6 +85,10 @@ function generateId() {
 }
 
 function init() {
+    // apply saved theme before rendering
+    const saved = localStorage.getItem('theme');
+    if (saved) setTheme(saved);
+
     myId = generateId();
     if (myIdEls) myIdEls.innerText = myId;
 
@@ -92,11 +120,17 @@ function init() {
 
     renderChatHistory();
     setupUIInteractions();
+    updateDarkModeButton();
 }
 
 function showMainApp() {
     setupScreen.classList.add('hidden');
     mainApp.classList.remove('hidden');
+    // update displayed name if changed before showing the UI
+    const userNameSpan = document.getElementById('user-name');
+    if (userNameSpan) userNameSpan.innerText = myName;
+    // also update dark mode button icon state
+    updateDarkModeButton();
 }
 
 function checkHashForAutoConnect() {
@@ -145,6 +179,17 @@ function handleHostConnection(connection) {
             systemNotice(`<strong>${data.senderName}</strong> joined.`, 'General');
             broadcast({ type: 'system', text: `<strong>${data.senderName}</strong> joined.`, channel: 'General' }, connection.peer);
             syncPeerList();
+        } else if (data.type === 'name-change') {
+            // أحد العملاء طلب تغيير اسمه
+            const { peerId, oldName, newName } = data;
+            if (clientConnections[peerId]) {
+                clientConnections[peerId].name = newName;
+                // نرسل إشعاراً للجميع
+                systemNotice(`<strong>${oldName}</strong> changed name to <strong>${newName}</strong>.`, currentChannel);
+                // نشر التغيير حتى يرى جميع العملاء
+                broadcast({ type: 'name-change', peerId, oldName, newName });
+                syncPeerList();
+            }
         } else {
             handleData(data, connection.peer);
             broadcast(data, connection.peer); // المضيف يعيد توجيه الرسائل والملفات للجميع
@@ -164,10 +209,10 @@ function handleHostConnection(connection) {
 async function safeSend(conn, data) {
     if (!conn || !conn.open || !conn.dataChannel) return;
     
-    // رفع مساحة الاستيعاب إلى 8 ميجابايت (8 * 1024 * 1024)
-    // وتقليل وقت الانتظار إلى 5 ملي ثانية للسرعة
-    while (conn.dataChannel.bufferedAmount > 8 * 1024 * 1024) {
-        await new Promise(r => setTimeout(r, 5));
+    // رفع مساحة الاستيعاب إلى 16 ميجابايت (16 * 1024 * 1024)
+    // وتقليل وقت الانتظار إلى 1 ملي ثانية للحد من التأخير
+    while (conn.dataChannel.bufferedAmount > 16 * 1024 * 1024) {
+        await new Promise(r => setTimeout(r, 1));
     }
     conn.send(data);
 }
@@ -191,7 +236,7 @@ function syncPeerList() {
 
 function handleData(data, senderPeerId) {
     if (data.type === 'chat') {
-        saveMessageToHistory(data.channel, data.text, data.senderName, data.senderAvatar, new Date(data.timestamp));
+        saveMessageToHistory(data.channel, data.text, data.senderName, data.senderAvatar, new Date(data.timestamp), data.senderId);
         if (currentChannel === data.channel) renderChatHistory();
         else showToast(`New message in # ${data.channel}`);
         // تشغيل صوت التنبيه
@@ -203,6 +248,13 @@ function handleData(data, senderPeerId) {
     } else if (data.type === 'peer-list' && !isHost) {
         updateMembersList(data.list);
 
+    } else if (data.type === 'name-change') {
+        if (!isHost) {
+            // update member entry immediately in case peer-list hasn't arrived yet
+            const item = membersList?.querySelector(`[data-peer-id="${data.peerId}"] .member-name`);
+            if (item) item.innerText = data.newName;
+            systemNotice(`<strong>${data.oldName}</strong> changed name to <strong>${data.newName}</strong>.`, currentChannel);
+        }
     } else if (data.type === 'sync-state' && !isHost) {
         // استلام تاريخ المحادثات والقنوات الجديدة عند الدخول
         channelHistories = data.histories;
@@ -215,28 +267,30 @@ function handleData(data, senderPeerId) {
         showToast(`New channel #${data.name} created!`);
 
     } else if (data.type === 'file-meta') {
-        incomingFiles[data.senderId] = { meta: data.meta, chunks: [], receivedBytes: 0, senderName: data.senderName, channel: data.channel };
-        showTransferProgress(`Downloading ${data.meta.name}...`, 0);
+        const fid = data.fileId || `${data.senderId}-unknown`;
+        incomingFiles[fid] = { meta: data.meta, chunks: [], receivedBytes: 0, senderName: data.senderName, senderId: data.senderId, channel: data.channel };
+        createTransferBar(fid, `Downloading ${data.meta.name}...`);
 
     } else if (data.type === 'file-chunk') {
-        const fileState = incomingFiles[data.senderId];
+        const fid = data.fileId;
+        const fileState = incomingFiles[fid];
         if (!fileState) return;
         fileState.chunks.push(data.chunk);
         fileState.receivedBytes += data.chunk.byteLength;
 
-        // تحديث شريط التقدم بذكاء (لتوفير موارد المعالج)
         const progress = Math.round((fileState.receivedBytes / fileState.meta.size) * 100);
-        if (progress % 5 === 0 || progress === 100) updateTransferProgress(progress);
+        if (progress % 5 === 0 || progress === 100) updateTransferBar(fid, progress);
 
         if (fileState.receivedBytes === fileState.meta.size) {
-            setTimeout(() => hideTransferProgress(), 500);
-            assembleFile(data.senderId);
+            setTimeout(() => removeTransferBar(fid), 500);
+            assembleFile(fid);
         }
     }
 }
 
-function assembleFile(senderId) {
-    const fileState = incomingFiles[senderId];
+function assembleFile(fileId) {
+    const fileState = incomingFiles[fileId];
+    if (!fileState) return;
     const blob = new Blob(fileState.chunks, { type: fileState.meta.type });
     const url = URL.createObjectURL(blob);
 
@@ -248,9 +302,9 @@ function assembleFile(senderId) {
     `;
     if (downloadsList) downloadsList.prepend(downloadItem);
 
-    saveMessageToHistory(fileState.channel, `Shared a file: <strong><a href="${url}" download="${fileState.meta.name}">${fileState.meta.name}</a></strong>`, fileState.senderName, '', new Date());
+    saveMessageToHistory(fileState.channel, `Shared a file: <strong><a href="${url}" download="${fileState.meta.name}">${fileState.meta.name}</a></strong>`, fileState.senderName, '', new Date(), fileState.senderId);
     if (currentChannel === fileState.channel) renderChatHistory();
-    delete incomingFiles[senderId];
+    delete incomingFiles[fileId];
 }
 
 async function sendMessage() {
@@ -258,7 +312,7 @@ async function sendMessage() {
     if (!text) return;
 
     const msgData = { type: 'chat', channel: currentChannel, senderId: myId, senderName: myName, senderAvatar: myAvatar, text: text, timestamp: Date.now() };
-    saveMessageToHistory(currentChannel, text, myName, myAvatar, new Date());
+    saveMessageToHistory(currentChannel, text, myName, myAvatar, new Date(), myId);
     renderChatHistory();
 
     if (isHost) await broadcast(msgData);
@@ -269,35 +323,67 @@ async function sendMessage() {
 
 // 🚀 نظام إرسال الملفات الخارق
 async function sendFile() {
-    const file = fileInput.files[0];
-    if (!file) return;
+    const files = fileInput.files;
+    if (!files || files.length === 0) return;
 
-    const metaData = { type: 'file-meta', channel: currentChannel, senderId: myId, senderName: myName, meta: { name: file.name, size: file.size, type: file.type } };
+    for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const fileId = `${myId}-${Date.now()}-${Math.random().toString(36).substr(2,4)}`;
+        const metaData = { type: 'file-meta', channel: currentChannel, senderId: myId, senderName: myName, fileId, meta: { name: file.name, size: file.size, type: file.type } };
 
-    if (isHost) await broadcast(metaData);
-    else await safeSend(hostConnection, metaData);
+        if (isHost) await broadcast(metaData);
+        else await safeSend(hostConnection, metaData);
 
-    saveMessageToHistory(currentChannel, `Sending file: <strong>${file.name}</strong>`, myName, myAvatar, new Date());
-    renderChatHistory();
+        saveMessageToHistory(currentChannel, `Sending file: <strong>${file.name}</strong>`, myName, myAvatar, new Date(), myId);
+        renderChatHistory();
 
-    const arrayBuffer = await file.arrayBuffer();
-    let offset = 0;
-    showTransferProgress(`Uploading ${file.name}...`, 0);
+        const arrayBuffer = await file.arrayBuffer();
+        let offset = 0;
+        createTransferBar(fileId, `${file.name} (${i+1}/${files.length})`);
 
-    while (offset < arrayBuffer.byteLength) {
-        const chunk = arrayBuffer.slice(offset, offset + CHUNK_SIZE);
-        const chunkData = { type: 'file-chunk', senderId: myId, chunk: chunk };
+        while (offset < arrayBuffer.byteLength) {
+            const chunk = arrayBuffer.slice(offset, offset + CHUNK_SIZE);
+            const chunkData = { type: 'file-chunk', senderId: myId, fileId, chunk: chunk };
 
-        if (isHost) await broadcast(chunkData);
-        else await safeSend(hostConnection, chunkData);
+            if (isHost) await broadcast(chunkData);
+            else await safeSend(hostConnection, chunkData);
 
-        offset += CHUNK_SIZE;
-        const progress = Math.round((offset / arrayBuffer.byteLength) * 100);
-        if (progress % 2 === 0 || progress >= 100) updateTransferProgress(Math.min(progress, 100)); // تحديث ذكي للواجهة
+            offset += CHUNK_SIZE;
+            const progress = Math.round((offset / arrayBuffer.byteLength) * 100);
+            if (progress % 2 === 0 || progress >= 100) updateTransferBar(fileId, Math.min(progress, 100));
+        }
+
+        await new Promise(r => setTimeout(r, 300));
+        removeTransferBar(fileId);
     }
 
-    setTimeout(() => hideTransferProgress(), 500);
     fileInput.value = '';
+}
+
+// ----------------- NAME CHANGE SUPPORT -----------------
+
+function changeName() {
+    const oldName = myName;
+    const newName = prompt('Enter your display name:', myName);
+    if (!newName || newName.trim() === '' || newName === oldName) return;
+    myName = newName.trim();
+    // update UI
+    const userNameSpan = document.getElementById('user-name');
+    if (userNameSpan) userNameSpan.innerText = myName;
+    showToast('Name updated');
+
+    if (isHost) {
+        // notify local history and others
+        systemNotice(`<strong>${oldName}</strong> changed name to <strong>${myName}</strong>.`, currentChannel);
+        syncPeerList();
+    } else if (hostConnection && hostConnection.open) {
+        safeSend(hostConnection, { type: 'name-change', peerId: myId, oldName, newName: myName });
+        // update own entry in members list immediately
+        const myItem = membersList?.querySelector(`[data-peer-id="${myId}"] .member-name`);
+        if (myItem) myItem.innerText = myName;
+        // show local notice immediately
+        systemNotice(`<strong>You</strong> changed name to <strong>${myName}</strong>.`, currentChannel);
+    }
 }
 
 // ----------------- UI / CHANNEL LOGIC -----------------
@@ -325,9 +411,9 @@ function addChannelToUI(channelName, teamName) {
     channelList.insertBefore(newBtn, channelList.lastElementChild);
 }
 
-function saveMessageToHistory(channel, text, sender, avatarUrl, date) {
+function saveMessageToHistory(channel, text, sender, avatarUrl, date, senderId = null) {
     if (!channelHistories[channel]) channelHistories[channel] = [];
-    channelHistories[channel].push({ text, sender, avatarUrl, date, type: 'chat' });
+    channelHistories[channel].push({ text, sender, avatarUrl, date, type: 'chat', senderId });
 }
 
 function systemNotice(text, channel) {
@@ -349,8 +435,9 @@ function renderChatHistory() {
         } else {
             const timeStr = msg.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             const safeAvatar = msg.avatarUrl || `https://ui-avatars.com/api/?name=${msg.sender}&background=random&color=fff`;
+            const mineClass = msg.senderId === myId ? ' mine' : '';
             chatBox.innerHTML += `
-            <div class="message-group">
+            <div class="message-group${mineClass}">
                 <img src="${safeAvatar}" class="msg-avatar">
                 <div class="msg-content">
                     <div class="msg-header"><span class="sender-name">${msg.sender}</span><span class="msg-time">${timeStr}</span></div>
@@ -362,20 +449,46 @@ function renderChatHistory() {
     chatBox.scrollTop = chatBox.scrollHeight;
 }
 
-function showTransferProgress(text, percentage) {
-    if (transferFilename) transferFilename.innerText = text;
-    updateTransferProgress(percentage);
-    if (transferContainer) transferContainer.classList.remove('hidden');
+// utility for managing multiple transfer bars
+function createTransferBar(id, text) {
+    if (!transferContainer) return null;
+    const item = document.createElement('div');
+    item.className = 'transfer-status';
+    item.dataset.transferId = id;
+    item.innerHTML = `
+        <div class="transfer-info">
+            <i class="fa-solid fa-file-arrow-up"></i>
+            <span class="transfer-filename">${text}</span>
+            <span class="transfer-percentage">0%</span>
+        </div>
+        <div class="progress-track">
+            <div class="progress-fill" style="width:0%"></div>
+        </div>
+    `;
+    transferContainer.appendChild(item);
+    transferContainer.classList.remove('hidden');
+    const filenameEl = item.querySelector('.transfer-filename');
+    const percentEl = item.querySelector('.transfer-percentage');
+    const fillEl = item.querySelector('.progress-fill');
+    transferItems[id] = { item, filenameEl, percentEl, fillEl };
+    return transferItems[id];
 }
 
-function updateTransferProgress(percentage) {
-    if (transferPercentage) transferPercentage.innerText = `${percentage}%`;
-    if (transferProgress) transferProgress.style.width = `${percentage}%`;
+function updateTransferBar(id, percentage) {
+    const t = transferItems[id];
+    if (!t) return;
+    if (t.percentEl) t.percentEl.innerText = `${percentage}%`;
+    if (t.fillEl) t.fillEl.style.width = `${percentage}%`;
 }
 
-function hideTransferProgress() {
-    if (transferContainer) transferContainer.classList.add('hidden');
-    if (transferProgress) transferProgress.style.width = '0%';
+function removeTransferBar(id) {
+    const t = transferItems[id];
+    if (!t) return;
+    if (t.item && transferContainer) transferContainer.removeChild(t.item);
+    delete transferItems[id];
+    if (Object.keys(transferItems).length === 0 && transferContainer) {
+        transferContainer.classList.add('hidden');
+    }
 }
 
 function showToast(message) {
@@ -388,7 +501,7 @@ function updateMembersList(list) {
     list.forEach(member => {
         const safeAvatar = member.avatar || `https://ui-avatars.com/api/?name=${member.name}&background=random&color=fff`;
         membersList.innerHTML += `
-            <div class="member-item">
+            <div class="member-item" data-peer-id="${member.id}">
                 <div class="avatar-wrapper"><img src="${safeAvatar}" class="member-avatar"><span class="status-dot green"></span></div>
                 <div class="member-info"><span class="member-name">${member.name}</span><span class="member-role">${member.role}</span></div>
             </div>`;
@@ -407,6 +520,44 @@ function setupUIInteractions() {
     document.querySelectorAll('.chat-channel').forEach(btn => {
         btn.addEventListener('click', (e) => { e.preventDefault(); switchChannel(btn.dataset.channel); });
     });
+
+    // collapse/toggle sidebar
+    const collapseIcon = document.querySelector('.collapse-icon');
+    if (collapseIcon) {
+        collapseIcon.addEventListener('click', () => {
+            const left = document.querySelector('.sidebar-left');
+            if (left) left.classList.toggle('collapsed');
+        });
+    }
+
+    // mobile menu toggle (double-click workspace header)
+    const workspaceHeader = document.querySelector('.workspace-header');
+    if (workspaceHeader) {
+        workspaceHeader.addEventListener('dblclick', () => {
+            const left = document.querySelector('.sidebar-left');
+            if (left) left.classList.toggle('open');
+        });
+    }
+
+    // dark mode toggle
+    const darkBtn = document.getElementById('dark-mode-toggle');
+    if (darkBtn) {
+        darkBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const current = document.documentElement.getAttribute('data-theme');
+            setTheme(current === 'dark' ? 'light' : 'dark');
+            updateDarkModeButton();
+        });
+    }
+
+    // إمكانية تعديل الإسم بعد دخول الغرفة
+    const userNameSpan = document.getElementById('user-name');
+    const editNameIcon = document.getElementById('edit-name-icon');
+    if (userNameSpan) {
+        const openRename = () => changeName();
+        userNameSpan.addEventListener('click', openRename);
+        if (editNameIcon) editNameIcon.addEventListener('click', openRename);
+    }
 
     // تفعيل وظيفة إنشاء قناة جديدة
     document.querySelectorAll('.add-channel-btn').forEach(btn => {

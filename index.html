@@ -103,11 +103,13 @@
 
             <div class="sidebar-footer">
                 <div class="footer-menu">
+                    <a href="#" id="dark-mode-toggle"><i class="fa-solid fa-moon"></i> Dark mode</a>
                     <a href="#"><i class="fa-solid fa-gear"></i> Settings</a>
                 </div>
                 <div class="user-profile">
                     <img src="https://i.pravatar.cc/150?img=11" alt="User" class="user-avatar-sm">
-                    <span>Brandon Franci</span>
+                    <span id="user-name" class="clickable">Brandon Franci</span>
+                    <i id="edit-name-icon" class="fa-solid fa-pen-to-square edit-name-icon" title="Edit name"></i>
                 </div>
                 <button class="record-btn">
                     <i class="fa-solid fa-video"></i> Record a video
@@ -144,15 +146,8 @@
             <div id="chat-box" class="chat-history scrollable">
             </div>
 
-            <div id="transfer-container" class="transfer-status hidden">
-                <div class="transfer-info">
-                    <i class="fa-solid fa-file-arrow-up"></i>
-                    <span id="transfer-filename">Uploading file...</span>
-                    <span id="transfer-percentage">0%</span>
-                </div>
-                <div class="progress-track">
-                    <div id="transfer-progress" class="progress-fill" style="width: 0%"></div>
-                </div>
+            <div id="transfer-container" class="hidden">
+                <!-- individual transfer-status items will be injected here via JavaScript -->
             </div>
 
             <div class="chat-input-area">
@@ -161,7 +156,7 @@
                         placeholder="Hey there! 👋 I'm doing great, thanks for asking @Desirae Lipshutz">
                     <div class="input-actions">
                         <button class="icon-btn"><i class="fa-solid fa-microphone"></i></button>
-                        <input type="file" id="file-input" class="hidden">
+                        <input type="file" id="file-input" class="hidden" multiple>
                         <button class="icon-btn" id="attach-btn"><i class="fa-solid fa-paperclip"></i></button>
                         <button class="icon-btn"><i class="fa-solid fa-at"></i></button>
                         <button class="icon-btn" id="emoji-btn"><i class="fa-regular fa-face-smile"></i></button>
