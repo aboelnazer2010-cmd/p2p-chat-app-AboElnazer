@@ -1,4 +1,5 @@
-const CHUNK_SIZE = 65536; // رفعنا حجم القطعة لـ 64KB لسرعة نقل خارقة
+// رفعنا حجم القطعة لـ 256KB لتقليل وقت المعالجة وزيادة السرعة
+const CHUNK_SIZE = 262144;
 let peer = null;
 
 // بنية الشبكة (Star Topology)
@@ -160,12 +161,14 @@ function handleHostConnection(connection) {
     });
 }
 
-// 🚀 خوارزمية الإرسال الآمن (لمنع انهيار المتصفح وتسريع نقل الملفات)
+// 🚀 خوارزمية الإرسال الآمن (تم تعديلها لأقصى سرعة)
 async function safeSend(conn, data) {
     if (!conn || !conn.open || !conn.dataChannel) return;
-    // إذا امتلأ مخزن البيانات بأكثر من 2 ميجا، انتظر قليلاً حتى يفرغ
-    while (conn.dataChannel.bufferedAmount > 2 * 1024 * 1024) {
-        await new Promise(r => setTimeout(r, 20));
+    
+    // رفع مساحة الاستيعاب إلى 8 ميجابايت (8 * 1024 * 1024)
+    // وتقليل وقت الانتظار إلى 5 ملي ثانية للسرعة
+    while (conn.dataChannel.bufferedAmount > 8 * 1024 * 1024) {
+        await new Promise(r => setTimeout(r, 5));
     }
     conn.send(data);
 }
@@ -475,3 +478,4 @@ if ('serviceWorker' in navigator) {
             });
     });
 }
+
