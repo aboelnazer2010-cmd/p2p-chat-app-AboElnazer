@@ -763,3 +763,94 @@ button:hover {
 .toaster.show {
     opacity: 1;
 }
+/* =========================================
+   التجاوب مع الشاشات (Responsive & Scroll)
+   ========================================= */
+
+/* 1. إصلاح التمرير الداخلي للأعمدة */
+.sidebar-left, 
+.main-chat-area, 
+.sidebar-right {
+    min-height: 0; /* خطوة مهمة لكي لا تتمدد العناصر خارج الشاشة */
+}
+
+/* 2. شاشات التابلت (أقل من 1024 بكسل) */
+@media (max-width: 1024px) {
+    .app-container {
+        /* إخفاء القائمة اليمنى لتوفير مساحة للدردشة */
+        grid-template-columns: var(--sidebar-width) 1fr; 
+    }
+    .sidebar-right {
+        display: none; 
+    }
+}
+
+/* 3. شاشات الهواتف المحمولة (أقل من 768 بكسل) */
+@media (max-width: 768px) {
+    body {
+        height: auto;
+        overflow-y: auto; /* السماح بتمرير الصفحة بالكامل (Scroll) */
+    }
+
+    .app-container {
+        display: flex; /* تحويل التخطيط من شبكة إلى عمود رأسي */
+        flex-direction: column;
+        height: auto;
+        min-height: 100vh;
+    }
+
+    .sidebar-left {
+        width: 100%;
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: 1rem;
+    }
+
+    .main-chat-area {
+        width: 100%;
+        height: 80vh; /* تحديد ارتفاع للدردشة لضمان عمل التمرير الداخلي للرسائل */
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .sidebar-right {
+        display: flex; /* إظهار القائمة اليمنى مجدداً في أسفل الصفحة */
+        width: 100%;
+        height: auto;
+        min-height: 300px;
+    }
+
+    /* تحسين شكل شريط الـ Header في الموبايل */
+    .chat-header-top {
+        flex-wrap: wrap;
+        height: auto;
+        padding: 1rem;
+        gap: 1rem;
+    }
+
+    .header-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .search-box input {
+        width: 140px; /* تصغير حقل البحث ليناسب الشاشات الصغيرة */
+    }
+
+    /* تحسين شاشة الإعداد الأولية للموبايل */
+    .setup-box {
+        width: 95%;
+        padding: 1.5rem;
+    }
+
+    .magic-link-container,
+    .join-container {
+        flex-direction: column; /* جعل الأزرار وحقول الإدخال فوق بعضها */
+    }
+    
+    #copy-link-btn, 
+    #connect-btn {
+        width: 100%;
+    }
+}
+
